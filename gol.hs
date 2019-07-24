@@ -1,12 +1,21 @@
-import UI.NCurses
+{-# LANGUAGE TemplateHaskell #-}
+
+import Control.Lens
+import Control.Lens.TH
+import Control.Monad (forM_)
 
 import Data.Set as Set
 
-import Control.Monad (forM_)
+import UI.NCurses
 
 data Point =
-  Point Integer Integer
+  Point
+    { _x :: Integer
+    , _y :: Integer
+    }
   deriving (Show, Ord, Eq)
+
+$(makeLenses ''Point)
 
 data CellState
   = Dead
@@ -18,7 +27,7 @@ data Cell =
   deriving (Show, Ord)
 
 instance Eq Cell where
-  (Cell (Point x1 y1) _) == (Cell (Point x2 y2) _) = x1 == x2 && y1 == y2
+  (Cell p1 _) == (Cell p2 _) = p1 ^. x == p2 ^. x && p1 ^. y == p2 ^. y
 
 type CA = Set Cell
 
@@ -34,13 +43,13 @@ gray = newColorID ColorBlack (Color 15) 2
 
 -- TODO: Learn lenses for accessing?
 drawCell :: Window -> Cell -> Curses ()
-drawCell w (Cell (Point x y) state) = do
+drawCell w (Cell p state) = do
   colorID <-
-    if even (x + y)
+    if even ((p ^. x) + (p ^. y))
       then gray
       else silver
   updateWindow w $ do setColor colorID
-  drawStringAt w x y $ cellToString state
+  drawStringAt w (p ^. x) (p ^. y) $ cellToString state
 
 drawAutomata :: Window -> CA -> Curses ()
 drawAutomata w ca = forM_ ca $ \c -> do drawCell w c
@@ -72,12 +81,12 @@ toggleCell (Cell p state) = Cell p nextState
       | otherwise = Alive
 
 getNeighbors :: CA -> Cell -> Set Cell
-getNeighbors ca (Cell (Point x y) _) =
+getNeighbors ca (Cell p _) =
   fromList . Prelude.filter (\c -> member c neighbors) . toList $ ca
   where
     neighbors =
       fromList
-        [ Cell (Point (x + dx) (y + dy)) Alive
+        [ Cell (p & x %~ (+ dx) & y %~ (+ dy)) Alive
         | dx <- [-1 .. 1]
         , dy <- [-1 .. 1]
         , not (dx == 0 && dy == 0)
