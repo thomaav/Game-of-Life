@@ -42,16 +42,8 @@ drawCell w (Cell (Point x y) state) = do
   updateWindow w $ do setColor colorID
   drawStringAt w x y $ cellToString state
 
--- TODO: Use fold?
 drawAutomata :: Window -> CA -> Curses ()
-drawAutomata w ca = loop . toList $ ca
-  where
-    loop l =
-      case l of
-        [] -> return ()
-        (hd:tl) -> do
-          drawCell w hd
-          loop tl
+drawAutomata w ca = forM_ ca $ \c -> do drawCell w c
 
 drawStringAt :: Window -> Integer -> Integer -> String -> Curses ()
 drawStringAt w x y str =
