@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+import Control.Concurrent (threadDelay)
 import Control.Lens
 import Control.Lens.TH
 import Control.Monad (forM_)
@@ -41,7 +42,6 @@ silver = newColorID ColorBlack (Color 7) 1
 gray :: Curses ColorID
 gray = newColorID ColorBlack (Color 15) 2
 
--- TODO: Learn lenses for accessing?
 drawCell :: Window -> Cell -> Curses ()
 drawCell w (Cell p state) = do
   colorID <-
@@ -53,6 +53,11 @@ drawCell w (Cell p state) = do
 
 drawAutomata :: Window -> CA -> Curses ()
 drawAutomata w ca = forM_ ca $ \c -> do drawCell w c
+
+renderAutomata :: Window -> CA -> Curses ()
+renderAutomata w ca = do
+  drawAutomata w ca
+  render
 
 drawStringAt :: Window -> Integer -> Integer -> String -> Curses ()
 drawStringAt w x y str =
@@ -67,11 +72,15 @@ isMouseClick _ = False
 mouseToggle :: CA -> Event -> CA
 mouseToggle ca (EventMouse _ (MouseState coords _ _ _ _)) =
   case coords of
-    (x, y, z) -> insert (toggleCell c) . Set.filter (\c' -> c' /= c) $ ca
-      where c = getCell ca (Point x y)
+    (x, y, z) -> toggleCACell ca (Point x y)
 
 getCell :: CA -> Point -> Cell
 getCell ca p = head . toList . Set.filter (\c -> c == Cell p Alive) $ ca
+
+toggleCACell :: CA -> Point -> CA
+toggleCACell ca p = insert (toggleCell c) . Set.filter (\c' -> c' /= c) $ ca
+  where
+    c = getCell ca p
 
 toggleCell :: Cell -> Cell
 toggleCell (Cell p state) = Cell p nextState
@@ -120,28 +129,38 @@ width = 50
 height :: Integer
 height = 20
 
+runDelay :: Maybe Integer
+runDelay = Just 50
+
 golCA :: CA
-golCA = fromList [Cell (Point x y) Dead | x <- [0 .. width], y <- [0 .. height]]
+golCA =
+  toggleCACell' (Point 25 9) .
+  toggleCACell' (Point 24 10) .
+  toggleCACell' (Point 25 10) . toggleCACell' (Point 25 11) $
+  initialCA
+  where
+    initialCA =
+      fromList [Cell (Point x y) Dead | x <- [0 .. width], y <- [0 .. height]]
+    toggleCACell' = flip toggleCACell
 
 rungol :: Window -> CA -> Curses ()
-rungol w ca = loop golCA
+rungol w ca = go golCA Nothing
   where
-    loop ca = do
-      drawAutomata w ca
-      render
-      ev <- getEvent w Nothing
+    go ca timeout = do
+      renderAutomata w ca
+      ev <- getEvent w timeout
       case ev of
-        Nothing -> loop . stepCA $ ca
+        Nothing -> go (stepCA ca) timeout
         Just ev'
           | shouldQuit ev' -> return ()
-          | isMouseClick ev' -> loop $ mouseToggle ca ev'
-          | ev' == EventCharacter 'n' -> loop . stepCA $ ca
-          | otherwise -> loop ca
+          | isMouseClick ev' -> go (mouseToggle ca ev') timeout
+          | ev' == EventCharacter 'n' -> go ca runDelay
+          | ev' == EventCharacter 'p' -> go ca Nothing
+          | otherwise -> go ca timeout
 
 shouldQuit :: Event -> Bool
 shouldQuit ev = ev == EventCharacter 'q' || ev == EventCharacter 'Q'
 
--- TODO: Monad transformer for IO inside Curses ()?
 main :: IO ()
 main =
   runCurses $ do
